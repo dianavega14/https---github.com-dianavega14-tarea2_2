@@ -32,72 +32,89 @@ export class CartController {
     static addToCart(req, res) {
         const { userId, productId, quantity } = req.body;
 
-        const validacion = validateCartSchemaDB({
-            usuario_id: userId,
-            producto_id: productId,
-            cantidad: quantity,
-        });
-
-        if (!validacion.success) {
-            return res.status(400).json({
-                error: true,
-                message: validacion.error.errors.map(err => err.message)
-            });
-        }
-
-        const checkQuery = `
-            SELECT * FROM carrito 
-            WHERE usuario_id = ? AND producto_id = ?
+        const stockCheckQuery = `
+            SELECT stock FROM productos WHERE id = ?
         `;
 
-        connection.query(checkQuery, [userId, productId], (error, results) => {
+        connection.query(stockCheckQuery, [productId], (error, results) => {
             if (error) {
                 return res.status(500).json({
                     error: true,
-                    message: `Error al verificar el producto en el carrito: ${error.message}`
+                    message: `Error al verificar el stock del producto: ${error.message}`
                 });
             }
 
-            if (results.length > 0) {
-                const updateQuery = `
-                    UPDATE carrito 
-                    SET cantidad = cantidad + ? 
-                    WHERE usuario_id = ? AND producto_id = ?
-                `;
-
-                connection.query(updateQuery, [quantity, userId, productId], (error) => {
-                    if (error) {
-                        return res.status(500).json({
-                            error: true,
-                            message: `Error al actualizar el producto en el carrito: ${error.message}`
-                        });
-                    }
-
-                    res.status(200).json({
-                        message: 'Cantidad del producto actualizada en el carrito'
-                    });
-                });
-            } else {
-                const insertQuery = `
-                    INSERT INTO carrito (usuario_id, producto_id, cantidad) 
-                    VALUES (?, ?, ?)
-                `;
-
-                connection.query(insertQuery, [userId, productId, quantity], (error) => {
-                    if (error) {
-                        return res.status(500).json({
-                            error: true,
-                            message: `Error al agregar el producto al carrito: ${error.message}`
-                        });
-                    }
-
-                    res.status(201).json({
-                        message: 'Producto agregado al carrito'
-                    });
+            if (results.length === 0) {
+                return res.status(404).json({
+                    error: true,
+                    message: 'Producto no encontrado'
                 });
             }
+
+            const stock = results[0].stock;
+
+            if (stock < quantity) {
+                return res.status(400).json({
+                    error: true,
+                    message: 'No hay suficiente stock disponible para este producto'
+                });
+            }
+
+            const checkQuery = `
+                SELECT * FROM carrito 
+                WHERE usuario_id = ? AND producto_id = ?
+            `;
+
+            connection.query(checkQuery, [userId, productId], (error, results) => {
+                if (error) {
+                    return res.status(500).json({
+                        error: true,
+                        message: `Error al verificar el producto en el carrito: ${error.message}`
+                    });
+                }
+
+                if (results.length > 0) {
+                    const updateQuery = `
+                        UPDATE carrito 
+                        SET cantidad = cantidad + ? 
+                        WHERE usuario_id = ? AND producto_id = ?
+                    `;
+
+                    connection.query(updateQuery, [quantity, userId, productId], (error) => {
+                        if (error) {
+                            return res.status(500).json({
+                                error: true,
+                                message: `Error al actualizar el producto en el carrito: ${error.message}`
+                            });
+                        }
+
+                        res.status(200).json({
+                            message: 'Cantidad del producto actualizada en el carrito'
+                        });
+                    });
+                } else {
+                    const insertQuery = `
+                        INSERT INTO carrito (usuario_id, producto_id, cantidad) 
+                        VALUES (?, ?, ?)
+                    `;
+
+                    connection.query(insertQuery, [userId, productId, quantity], (error) => {
+                        if (error) {
+                            return res.status(500).json({
+                                error: true,
+                                message: `Error al agregar el producto al carrito: ${error.message}`
+                            });
+                        }
+
+                        res.status(201).json({
+                            message: 'Producto agregado al carrito'
+                        });
+                    });
+                }
+            });
         });
     }
+
 
     static removeFromCart(req, res) {
         const { id } = req.params;
